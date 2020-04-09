@@ -20,12 +20,11 @@ protocol GeocoderProtocol {
     func reverseGeocodeCoordinate(_ coordinate: CLLocationCoordinate2D, completionHandler: @escaping GMSReverseGeocodeCallback)
 }
 
-class PlacesDataSource: NSObject {
+class PlacesTableViewDataSource: NSObject {
     weak var tableView: UITableView?
     weak var delegate: PlacesDataSourceDelegate?
     
-    private let geocoder: GeocoderProtocol
-    private let placesClient: GMSPlacesClient
+    private let geocoderManager: GeocoderManager
     private let renderer: PlacesListRenderer
     private var state = ListState.nothingSelected {
         didSet {
@@ -35,9 +34,8 @@ class PlacesDataSource: NSObject {
     
     private var sessionToken: GMSAutocompleteSessionToken!
     
-    init(renderer: PlacesListRenderer, geocoder: GeocoderProtocol, placesClient: GMSPlacesClient = GMSPlacesClient.shared()) {
-        self.geocoder = geocoder
-        self.placesClient = placesClient
+    init(renderer: PlacesListRenderer, geocoderManager: GeocoderManager) {
+        self.geocoderManager = geocoderManager
         self.renderer = renderer
         self.sessionToken = GMSAutocompleteSessionToken()
         super.init()
@@ -45,15 +43,27 @@ class PlacesDataSource: NSObject {
     
     func fetchPlacesFor(coordinate: CLLocationCoordinate2D, bounds: GMSCoordinateBounds?) {
         self.state = .loading
-        reverseGecodeLocation(coordinate: coordinate) { adresses, error in
-            guard error == nil else { return self.state = .error(error: error!) }
-            self.state = .addresses(objects: adresses)
+        geocoderManager.fetchPlacesFor(coordinate: coordinate, bounds: bounds) { [weak self] (response, error) in
+            guard error == nil else {
+                self?.state = .error(error: error!)
+                self?.tableView?.reloadData()
+                return
+            }
+            self?.state = .addresses(objects: response)
         }
     }
     
     func fetchPlaceDetails(placeId: String) {
         self.state = .loading
-        fetchDetailsFromGooglePlaces(placeId: placeId)
+        geocoderManager.fetchPlaceDetails(placeId: placeId) { [weak self] (result, error) in
+            guard error == nil else {
+                self?.state = .error(error: error!)
+                self?.tableView?.reloadData()
+                return
+            }
+            self?.state = .addresses(objects: result)
+            self?.tableView?.reloadData()
+        }
     }
     
     func didSelectListItemAt(index: Int) {
@@ -61,32 +71,9 @@ class PlacesDataSource: NSObject {
             delegate?.placePickerDidSelectPlace(place: objects[index])
         }
     }
-    
-    private func fetchDetailsFromGooglePlaces(placeId: String) {
-        placesClient.lookUpPlaceID(placeId) { [weak self] (place, error) in
-            if let error = error {
-                self?.state = .error(error: error)
-                self?.tableView?.reloadData()
-                return
-            }
-            
-            if let place = place {
-                self?.state = .addresses(objects: [place])
-                self?.tableView?.reloadData()
-            }
-            
-        }
-    }
-    
-    private func reverseGecodeLocation(coordinate: CLLocationCoordinate2D, completion: @escaping (_ adresses: [AddressResult], _ error: Error?) -> ()) {
-        geocoder.reverseGeocodeCoordinate(coordinate) { (response, error) in
-            guard let addresses = response?.results() else { return completion([], error) }
-            completion(Array(addresses), nil)
-        }
-    }
 }
 
-extension PlacesDataSource: UITableViewDataSource {
+extension PlacesTableViewDataSource: UITableViewDataSource {
     
     public func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch state {
@@ -114,7 +101,7 @@ extension PlacesDataSource: UITableViewDataSource {
     }
 }
 
-extension PlacesDataSource: GMSAutocompleteViewControllerDelegate {
+extension PlacesTableViewDataSource: GMSAutocompleteViewControllerDelegate {
     public func viewController(_ viewController: GMSAutocompleteViewController, didAutocompleteWith place: GMSPlace) {
         self.state = .addresses(objects: [place])
         

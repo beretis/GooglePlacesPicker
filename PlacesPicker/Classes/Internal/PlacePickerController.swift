@@ -36,12 +36,14 @@ public class PlacePickerController: UIViewController, PlacesDataSourceDelegate {
         if let initialCoordinate = self.config.initialCoordinate {
             let position = GMSCameraPosition(latitude: initialCoordinate.latitude, longitude: initialCoordinate.longitude, zoom: config.initialZoom)
             pickerView.mapView.animate(to: position)
-        }
+        } else {
+          
+      }
     }
     
     // Internal
     
-    private var placesDataSource: PlacesDataSource!
+    private var placesDataSource: PlacesTableViewDataSource!
     private var config: PlacePickerConfig!
     
     private var pickerView: PlacePickerView {
@@ -128,7 +130,7 @@ public extension PlacePickerController {
     static func controler(config: PlacePickerConfig) -> PlacePickerController {
         let controller = PlacePickerController()
         controller.config = config
-        controller.placesDataSource = PlacesDataSource(renderer: config.listRenderer, geocoder: GMSGeocoder())
+      controller.placesDataSource = PlacesTableViewDataSource(renderer: config.listRenderer, geocoderManager: GeocoderManager(geocoder: GMSGeocoder()))
         controller.placesDataSource.delegate = controller
         return controller
     }
